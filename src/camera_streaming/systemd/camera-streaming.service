@@ -1,0 +1,21 @@
+[Unit]
+Description=USV B1 board camera streaming (camera_node + http_video_server) ROS 2 stack
+Requires=docker.service
+After=docker.service network-online.target usv-sensors.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=@RUN_USER@
+Group=@RUN_GROUP@
+SupplementaryGroups=docker
+Environment=HOME=@HOME_DIR@
+Environment=CAMERA_STREAMING_PROJECT_DIR=@PROJECT_DIR@
+ExecStart=@PROJECT_DIR@/start_camera_streaming.sh
+ExecStop=-/usr/bin/docker stop camera_streaming_container
+TimeoutStartSec=180
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

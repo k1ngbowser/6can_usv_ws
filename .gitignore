@@ -1,2 +1,7 @@
 __pycache__/
 *.pyc
+
+# colcon workspace build artifacts
+build/
+install/
+log/

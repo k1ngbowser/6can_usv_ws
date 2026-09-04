@@ -24,10 +24,11 @@
 보여주기만 한다. LED는 아직 조이스틱에 버튼을 안 배정해서 계속 GUI 쪽 컨트롤(/api/led)로
 남겨뒀다.
 
-듀얼 카메라 MJPEG 스트림은 이 노드가 직접 발행하지 않는다. web_video_server를 별도
-실행해서 /camera/surface/image_raw, /camera/underwater/image_raw 토픽을 HTTP로 변환해야
-하고, 이 노드의 웹 대시보드(dashboard_html.py)는 그 스트림 주소를 <img> 태그로 그대로
-표시한다.
+듀얼 카메라 MJPEG 스트림은 이 노드가 직접 발행하지 않는다. B1 보드의 camera_streaming
+패키지(별도 컨테이너)가 http_video_server로 /camera/surface/image_raw,
+/camera/underwater/image_raw 토픽을 B1 자신의 8000번 포트에서 HTTP로 변환해 서빙하고,
+이 노드의 웹 대시보드(dashboard_html.py)는 camera_host 파라미터로 그 주소를 알아내
+<img> 태그로 그대로 표시한다.
 
 전류 센서 4개(추진기1/2, 펌프 제어부, 센서 보드)는 전부 B1 보드에 물려있어서
 usv_sensors의 current_sensor_node가 /battery/status 하나로 통합 발행한다. 예전에
@@ -65,6 +66,10 @@ class GuiMainNode(Node):
         super().__init__('gui_main_node')
 
         self.declare_parameter('http_port', 8000)
+        # 카메라 스트림은 GCS가 아니라 B1 보드 위 camera_streaming 패키지(http_video_server,
+        # 고정 포트 8000)가 직접 서빙한다. GCS는 B1의 IP를 알 방법이 없으므로 launch 인자로
+        # 받는다. 비워두면 dashboard_html.py가 GCS 자신의 호스트로 폴백한다(대부분 틀린 주소).
+        self.declare_parameter('camera_host', '')
 
         self.state_lock = threading.Lock()
         self.state = {
@@ -153,9 +158,12 @@ def create_app(node: GuiMainNode) -> Flask:
     web_dir = get_package_share_directory('usv_gcs') + '/web'
     app = Flask(__name__, static_folder=web_dir, static_url_path='')
 
+    camera_host = node.get_parameter('camera_host').value
+    rendered_index_html = INDEX_HTML.replace('__CAMERA_HOST__', camera_host)
+
     @app.get('/')
     def index():
-        return INDEX_HTML
+        return rendered_index_html
 
     @app.get('/api/state')
     def api_state():

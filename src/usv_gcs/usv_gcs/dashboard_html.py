@@ -84,12 +84,17 @@ INDEX_HTML = """<!doctype html>
 </div>
 
 <script>
-// --- [카메라 스트림] web_video_server가 변환한 MJPEG를 <img>로 그대로 표시 ---
-const WEB_VIDEO_PORT = 8080;  // web_video_server 기본 포트, 다르게 실행했다면 여기만 바꾸면 됨
+// --- [카메라 스트림] B1 보드의 camera_streaming 패키지(http_video_server)가 MJPEG를
+// 직접 서빙한다 - GCS 자신이 아니라 B1 보드 위에서 도는 서버라 GCS의 location.hostname을
+// 쓰면 안 된다. 포트는 camera_streaming 쪽 고정값(8000). 호스트는 gui_main_node.py의
+// camera_host 파라미터(gcs.launch.py camera_host 인자)로 주입 - 안 넘기면 GCS 자신의
+// 호스트로 폴백하는데, 대부분의 경우 잘못된 주소이니 반드시 launch 인자로 B1 IP를 넘길 것.
+const CAMERA_PORT = 8000;
+const cameraHost = "__CAMERA_HOST__" || location.hostname;
 document.getElementById('surfaceCam').src =
-    `http://${location.hostname}:${WEB_VIDEO_PORT}/stream?topic=/camera/surface/image_raw`;
+    `http://${cameraHost}:${CAMERA_PORT}/stream?topic=/camera/surface/image_raw`;
 document.getElementById('underwaterCam').src =
-    `http://${location.hostname}:${WEB_VIDEO_PORT}/stream?topic=/camera/underwater/image_raw`;
+    `http://${cameraHost}:${CAMERA_PORT}/stream?topic=/camera/underwater/image_raw`;
 
 // --- [펌프] 조종은 조이스틱 하나로만 하므로 펌프도 joy_to_cmd_node가 조이스틱 버튼으로
 // 직접 /actuator/pump_cmd를 발행한다. 이 화면은 그 상태를 표시만 한다(버튼 없음). ---

@@ -1,13 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
-# gps_and_water_quality_and_ros/install_autostart.sh와 동일한 패턴.
+# usv_sensors/install_autostart.sh와 동일한 패턴.
 # sudo를 이 스크립트 자체에 붙이지 말 것 — 현재 사용자를 서비스 실행 계정으로 저장하고,
 # 필요한 설정 명령에만 내부적으로 sudo를 사용한다.
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-SERVICE_SOURCE="$SCRIPT_DIR/systemd/usv-sensors.service"
-SERVICE_TARGET="/etc/systemd/system/usv-sensors.service"
+SERVICE_SOURCE="$SCRIPT_DIR/systemd/camera-streaming.service"
+SERVICE_TARGET="/etc/systemd/system/camera-streaming.service"
 
 if [ "${EUID}" -eq 0 ]; then
     SUDO=()
@@ -32,7 +32,7 @@ sed \
     | "${SUDO[@]}" tee "$SERVICE_TARGET" >/dev/null
 
 "${SUDO[@]}" systemctl daemon-reload
-"${SUDO[@]}" systemctl enable --now usv-sensors.service
+"${SUDO[@]}" systemctl enable --now camera-streaming.service
 
-echo "Autostart installed: usv-sensors.service"
-echo "Check status with: sudo systemctl status usv-sensors.service"
+echo "Autostart installed: camera-streaming.service"
+echo "Check status with: sudo systemctl status camera-streaming.service"

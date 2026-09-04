@@ -4,7 +4,11 @@
   /water_quality/data [std_msgs/msg/String]    B1의 수질 JSON (자동 제어용)
   /actuator/pump_cmd  [std_msgs/msg/Bool]      GCS 수동 명령 — 분수 펌프 on/off
   /actuator/led_cmd   [std_msgs/msg/ColorRGBA] GCS 수동 명령 — RGB LED 색상
-  /actuator/auto_mode [std_msgs/msg/Bool]      (선택) 자동/수동 토글
+  /actuator/auto_mode [std_msgs/msg/Bool]      joy_to_cmd_node가 조이스틱 버튼으로 발행하는
+                                                 자동/수동 토글
+발행:
+  /actuator/pump_state [std_msgs/msg/Bool]      실제로 적용된 펌프 상태 (GCS 표시용)
+  /actuator/led_state  [std_msgs/msg/ColorRGBA] 실제로 적용된 LED 색상 (GCS 표시용)
 
 수질에 따라 분수 펌프와 RGB LED를 자동 제어하되, 사람이 GCS에서 버튼을 누르면
 그쪽을 우선한다. 자동 입력(/water_quality/data)과 수동 입력(/actuator/*_cmd)이
@@ -14,10 +18,12 @@
 그 시간이 지나면 자동이 다시 판단한다. "단계가 바뀔 때만 개입"으로 하면 물이
 계속 나쁠 때 사람이 끄고 잊어버린 펌프가 영영 안 켜지기 때문이다.
 
-토픽 이름과 타입은 기존 인터페이스 계약(README.md 1항) 그대로다. GCS와 B1은
-아무것도 고치지 않아도 된다. /actuator/auto_mode는 아직 아무도 발행하지 않지만,
-나중에 GCS가 토글을 추가하면 이 노드를 수정하지 않고 바로 동작하도록 미리
-구독해 둔 것이다 (발행자가 없으면 자동=켬으로 동작).
+자동 제어가 GCS의 마지막 명령을 덮어쓸 수 있어서, /actuator/pump_cmd·led_cmd(명령)만
+보면 GCS가 실제 상태를 알 수 없다. 그래서 이 노드가 실제로 적용한 값을
+/actuator/pump_state·led_state로 따로 발행한다 (pump_cmd/led_cmd는 여전히 명령 전용).
+
+/actuator/auto_mode는 발행자(joy_to_cmd_node)가 없어도 자동=켬으로 동작하도록
+기본값을 안전하게 잡아뒀다.
 
 주의: 여기서 말하는 LED는 B2 보드에 물리적으로 배선된, 분수 펌프 옆의 별도 RGB
 LED 조명이다. UNO Q 보드 자체의 내장 상태표시 LED와는 다른 하드웨어다.
@@ -65,8 +71,15 @@ class ActuatorDriverNode(Node):
         self.create_subscription(Bool, '/actuator/pump_cmd', self.on_pump_cmd, 10)
         self.create_subscription(ColorRGBA, '/actuator/led_cmd', self.on_led_cmd, 10)
 
-        # 아직 아무도 발행하지 않는다. 발행자가 없으면 자동=켬으로 동작한다.
+        # joy_to_cmd_node가 조이스틱 버튼으로 발행. 발행자가 아예 없으면(구버전 GCS 등)
+        # 자동=켬으로 동작한다.
         self.create_subscription(Bool, '/actuator/auto_mode', self.on_auto_mode, 10)
+
+        # GCS가 표시용으로 구독하는 실제 적용 상태. 자동 제어가 GCS의 마지막 명령을
+        # 덮어쓸 수 있으므로, /actuator/pump_cmd·led_cmd(명령)만으로는 실제로 지금
+        # 뭐가 켜져 있는지 GCS가 알 수 없다.
+        self.pump_state_pub = self.create_publisher(Bool, '/actuator/pump_state', 10)
+        self.led_state_pub = self.create_publisher(ColorRGBA, '/actuator/led_state', 10)
 
         self.auto_enabled = True
         self.stage = None
@@ -182,6 +195,9 @@ class ActuatorDriverNode(Node):
             return
 
         self.applied_pump = on
+        state_msg = Bool()
+        state_msg.data = on
+        self.pump_state_pub.publish(state_msg)
 
     def send_led(self, r, g, b):
         rgb = (
@@ -202,6 +218,10 @@ class ActuatorDriverNode(Node):
             return
 
         self.applied_led = rgb
+        state_msg = ColorRGBA()
+        state_msg.r, state_msg.g, state_msg.b = (v / 255.0 for v in rgb)
+        state_msg.a = 1.0
+        self.led_state_pub.publish(state_msg)
 
 
 def main(args=None):
