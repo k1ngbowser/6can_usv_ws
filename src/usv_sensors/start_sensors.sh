@@ -42,6 +42,8 @@ echo "[4] Starting ROS 2 container (usv_sensors)..."
 # README.md 0항의 Docker 필수 조건(--privileged / -v /dev:/dev 등 디바이스 마운트 적용)을 그대로 반영.
 # 소스를 바인드 마운트하고 컨테이너 시작 시 다시 빌드해서, 이미지 재빌드 없이
 # 코드 수정을 바로 반영할 수 있게 한다 (gps_and_water_quality_and_ros와 동일 패턴).
+# --packages-select usv_sensors: 이 보드(B1)에는 usv_sensors만 올라가므로 워크스페이스에
+# 다른 패키지가 섞여 있어도 그것까지 같이 빌드하지 않는다.
 docker run -d \
     --name "$CONTAINER_NAME" \
     --network host \
@@ -55,7 +57,7 @@ docker run -d \
     bash -c '
         source /opt/ros/jazzy/setup.bash
         cd /ros2_ws
-        colcon build --symlink-install
+        colcon build --symlink-install --packages-select usv_sensors
         source /ros2_ws/install/setup.bash
         ros2 launch usv_sensors sensors.launch.py
     '

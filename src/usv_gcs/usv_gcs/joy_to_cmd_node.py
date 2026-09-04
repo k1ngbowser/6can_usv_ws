@@ -23,6 +23,10 @@ class JoyToCmdNode(Node):
         # 확정. 실제 조이스틱에서 다르게 나오면 코드는 그대로 두고 pump_button 인자만
         # 바꾸면 됨.
         self.declare_parameter('pump_button', 0)
+        # 자동/수동 제어 토글 버튼 번호. 마우스로 GUI 체크박스를 누를 사람이 없으므로
+        # pump_button과 동일한 패턴으로 여기서 토글 발행한다. 실제 버튼 배정은 팀 논의 후
+        # 확정 필요 - 임시로 1번(Xbox 계열 기준 B 버튼) 지정.
+        self.declare_parameter('auto_button', 1)
         self.declare_parameter('enable_heartbeat', False)   # /gcs/heartbeat 발행 여부 - 설계 미확정, 팀 논의 후 True로 전환
         self.declare_parameter('heartbeat_period_sec', 0.5)  # watchdog timeout보다 충분히 짧게 설정 필요
 
@@ -32,6 +36,7 @@ class JoyToCmdNode(Node):
         self.angular_scale = self.get_parameter('angular_scale').value
         self.deadzone = self.get_parameter('deadzone').value
         self.pump_button = self.get_parameter('pump_button').value
+        self.auto_button = self.get_parameter('auto_button').value
         self.enable_heartbeat = self.get_parameter('enable_heartbeat').value
         self.heartbeat_period_sec = self.get_parameter('heartbeat_period_sec').value
 
@@ -45,6 +50,9 @@ class JoyToCmdNode(Node):
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', qos)
         # gui_main_node도 이 토픽을 구독해서 대시보드에 펌프 상태를 표시만 한다 (발행 X).
         self.pump_pub = self.create_publisher(Bool, '/actuator/pump_cmd', qos)
+        # gui_main_node/B2 둘 다 이 토픽을 구독. gui_main_node는 표시만, B2는 이 값으로
+        # 자동/수동을 나눈다 (발행 X, 여기서만 발행).
+        self.auto_mode_pub = self.create_publisher(Bool, '/actuator/auto_mode', qos)
 
         self._last_joy_time = None
 
@@ -58,6 +66,15 @@ class JoyToCmdNode(Node):
             )
 
         self.get_logger().info('joy_to_cmd_node started')
+        self.prev_pump_state = False # 이전 펌프 상태를 저장하여 버튼 상태 변화 감지용
+        self.prev_auto_button_state = False  # 버튼 눌림 자체의 변화 감지용 (edge trigger)
+        self.auto_mode = True  # 기본값: 자동 제어 켜짐
+
+        # B2가 노드 시작 직후 켜져도 기본값을 바로 알 수 있도록 시작 시 한 번 발행.
+        # (버튼을 누르기 전까지는 /joy 콜백이 안 돌아서 값이 안 나감)
+        auto_msg = Bool()
+        auto_msg.data = self.auto_mode
+        self.auto_mode_pub.publish(auto_msg)
 
     def joy_callback(self, msg: Joy):
         self._last_joy_time = self.get_clock().now()
@@ -77,9 +94,22 @@ class JoyToCmdNode(Node):
         self.cmd_pub.publish(twist)
 
         if len(msg.buttons) > self.pump_button:
-            pump_msg = Bool()
-            pump_msg.data = bool(msg.buttons[self.pump_button])
-            self.pump_pub.publish(pump_msg)
+            new_state = bool(msg.buttons[self.pump_button])
+            if new_state != self.prev_pump_state:
+                pump_msg = Bool()
+                pump_msg.data = new_state
+                self.pump_pub.publish(pump_msg)
+                self.prev_pump_state = new_state
+
+        if len(msg.buttons) > self.auto_button:
+            button_pressed = bool(msg.buttons[self.auto_button])
+            if button_pressed and not self.prev_auto_button_state:
+                # 버튼을 누르는 순간(edge)에만 토글 - 누르고 있는 동안 계속 뒤집히지 않게
+                self.auto_mode = not self.auto_mode
+                auto_msg = Bool()
+                auto_msg.data = self.auto_mode
+                self.auto_mode_pub.publish(auto_msg)
+            self.prev_auto_button_state = button_pressed
 
     def heartbeat_callback(self):
         header = Header()

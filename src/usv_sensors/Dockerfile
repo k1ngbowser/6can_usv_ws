@@ -25,7 +25,7 @@ RUN /bin/bash -c "source /opt/ros/jazzy/setup.bash && \
     rosdep install --from-paths src --ignore-src -y"
 
 RUN /bin/bash -c "source /opt/ros/jazzy/setup.bash && \
-    colcon build"
+    colcon build --packages-select usv_sensors"
 
 ENV ROS_DOMAIN_ID=0
 

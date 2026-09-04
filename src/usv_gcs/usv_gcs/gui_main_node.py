@@ -10,12 +10,19 @@
   /cmd_vel             [geometry_msgs/msg/Twist]     조이스틱 인디케이터 표시용
   /actuator/pump_cmd   [std_msgs/msg/Bool]           joy_to_cmd_node가 조이스틱 버튼으로
                                                        발행 - 여기선 상태 표시용으로만 구독
+  /actuator/pump_state [std_msgs/msg/Bool]           B2가 발행하는 펌프 실제 상태(명령과
+                                                       다를 수 있음) - 상태 표시용으로만 구독
+  /actuator/led_state  [std_msgs/msg/ColorRGBA]      B2가 발행하는 LED 실제 상태 - 상태
+                                                       표시용으로만 구독
+  /actuator/auto_mode  [std_msgs/msg/Bool]           joy_to_cmd_node가 조이스틱 버튼으로
+                                                       발행 - 여기선 상태 표시용으로만 구독
 발행:
   /actuator/led_cmd    [std_msgs/msg/ColorRGBA]
 
-조종은 조이스틱 하나로만 하므로(마우스로 GUI 버튼을 누를 사람이 없음) 펌프는
-joy_to_cmd_node가 발행하고, 이 노드는 그 상태를 /api/state로 보여주기만 한다.
-LED는 아직 조이스틱에 버튼을 안 배정해서 계속 GUI 쪽 컨트롤(/api/led)로 남겨뒀다.
+조종은 조이스틱 하나로만 하므로(마우스로 GUI 버튼을 누를 사람이 없음) 펌프와 자동/수동
+전환은 joy_to_cmd_node가 조이스틱 버튼으로 발행하고, 이 노드는 그 상태를 /api/state로
+보여주기만 한다. LED는 아직 조이스틱에 버튼을 안 배정해서 계속 GUI 쪽 컨트롤(/api/led)로
+남겨뒀다.
 
 듀얼 카메라 MJPEG 스트림은 이 노드가 직접 발행하지 않는다. web_video_server를 별도
 실행해서 /camera/surface/image_raw, /camera/underwater/image_raw 토픽을 HTTP로 변환해야
@@ -67,6 +74,9 @@ class GuiMainNode(Node):
             'battery_status': None,
             'cmd_vel': None,
             'pump_on': None,
+            'pump_state': None,
+            'led_state': None,
+            'auto_mode': None,
         }
 
         self.create_subscription(String, '/water_quality/data', self.on_water_quality, 10)
@@ -75,6 +85,9 @@ class GuiMainNode(Node):
         self.create_subscription(String, '/battery/status', self.on_battery_status, 10)
         self.create_subscription(Twist, '/cmd_vel', self.on_cmd_vel, 10)
         self.create_subscription(Bool, '/actuator/pump_cmd', self.on_pump_cmd, 10)
+        self.create_subscription(Bool, '/actuator/pump_state', self.on_pump_state, 10)
+        self.create_subscription(ColorRGBA, '/actuator/led_state', self.on_led_state, 10)
+        self.create_subscription(Bool, '/actuator/auto_mode', self.on_auto_mode, 10)
 
         self.led_pub = self.create_publisher(ColorRGBA, '/actuator/led_cmd', 10)
 
@@ -111,6 +124,18 @@ class GuiMainNode(Node):
     def on_pump_cmd(self, msg: Bool):
         with self.state_lock:
             self.state['pump_on'] = msg.data
+
+    def on_pump_state(self, msg: Bool):
+        with self.state_lock:
+            self.state['pump_state'] = msg.data
+
+    def on_led_state(self, msg: ColorRGBA):
+        with self.state_lock:
+            self.state['led_state'] = {'r': msg.r, 'g': msg.g, 'b': msg.b}
+
+    def on_auto_mode(self, msg: Bool):
+        with self.state_lock:
+            self.state['auto_mode'] = msg.data
 
     def snapshot(self):
         with self.state_lock:

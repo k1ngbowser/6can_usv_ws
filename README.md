@@ -74,7 +74,7 @@ usv_ws/src/
 | `/camera/surface/image_raw`, `/camera/underwater/image_raw` | `sensor_msgs/msg/Image` | `usv_sensors` | `web_video_server` → GCS 웹 UI |
 | `/cmd_vel` | `geometry_msgs/msg/Twist` | `usv_gcs` (joy_to_cmd_node) | `usv_actuators`, `usv_gcs` (내부 표시) |
 | `/battery/status` | `std_msgs/msg/String` (JSON) | `usv_sensors` (current_sensor_node) | `usv_gcs` |
-| `/actuator/pump_cmd` | `std_msgs/msg/Bool` | `usv_gcs` | `usv_actuators` |
+| `/actuator/pump_cmd` | `std_msgs/msg/Bool` | `usv_gcs` (joy_to_cmd_node) | `usv_actuators`, `usv_gcs` (내부 표시) |
 | `/actuator/led_cmd` | `std_msgs/msg/ColorRGBA` | `usv_gcs` | `usv_actuators` |
 
 `/battery/status`의 JSON 구조:
@@ -128,6 +128,8 @@ flowchart LR
   JOY -->|/joy| J2C
   J2C -->|/cmd_vel| GUI
   J2C -->|/cmd_vel| THR
+  J2C -->|/actuator/pump_cmd| GUI
+  J2C -->|/actuator/pump_cmd| ACT
 
   WQN -->|/water_quality/data| GUI
   GPSN -->|/gps/fix| GUI
@@ -140,7 +142,6 @@ flowchart LR
   WVS -. HTTP MJPEG :8080 .-> BROWSER
   GUI -. HTTP :8000 대시보드 .-> BROWSER
 
-  GUI -->|/actuator/pump_cmd| ACT
   GUI -->|/actuator/led_cmd| ACT
 ```
 
@@ -148,12 +149,15 @@ flowchart LR
 
 ## 🛠️ 2. 공통 준비 (모든 보드)
 
+이 저장소는 `usv_sensors`(B1) / `usv_actuators`(B2) / `usv_gcs`(GCS) 3개 패키지를 한 워크스페이스에 모아둔 모노레포입니다. **보드 한 대에는 그 보드가 담당하는 패키지 1개만 올라가므로, 어느 보드에서도 워크스페이스 전체를 빌드하지 않습니다.** 클론은 전체 저장소를 받되, 빌드는 항상 3항의 보드별 안내를 따라 `--packages-select`로 해당 패키지만 선택 빌드하세요.
+
 ```bash
 git clone <이 저장소>
 cd usv_project/usv_ws
-colcon build --symlink-install
-source install/setup.bash
 ```
+
+- B1 / B2(Arduino UNO Q): 소스만 받아두면 됩니다. 실제 빌드는 Docker 안에서 `start_sensors.sh` / `start_actuators.sh`가 대신 실행합니다 (3항 참고).
+- GCS(Raspberry Pi): 3항의 GCS 절차대로 `usv_gcs`만 선택 빌드합니다.
 
 ---
 
@@ -170,6 +174,7 @@ pip install -r requirements.txt          # 이미지 안에서는 Dockerfile이 
 
 - 카메라 장치 번호는 명령줄로 넘기지 않습니다.
 - `usv_ws/src/usv_sensors/config/sensors_params.yaml`의 `surface_device` / `underwater_device` 값을 실제 번호로 고치면 다음 실행부터 자동 반영됩니다.
+- 빌드 범위: Docker 이미지 빌드(`Dockerfile`)와 컨테이너 기동(`start_sensors.sh`) 둘 다 `colcon build --packages-select usv_sensors`만 실행합니다 — 이 보드는 `usv_sensors` 외 다른 패키지를 빌드/실행할 필요가 없습니다.
 
 ### B2 — `usv_actuators` (Docker)
 
@@ -178,6 +183,8 @@ cd usv_ws/src/usv_actuators
 ./start_actuators.sh
 ./install_autostart.sh                   # (선택)
 ```
+
+- 빌드 범위: Docker 이미지 빌드(`Dockerfile`)와 컨테이너 기동(`start_actuators.sh`) 둘 다 `colcon build --packages-select usv_actuators`만 실행합니다 — 이 보드는 `usv_actuators` 외 다른 패키지를 빌드/실행할 필요가 없습니다.
 
 파라미터 오버라이드 예시 (모터 드라이버 PWM 범위 확정 후):
 
@@ -191,11 +198,12 @@ ros2 launch usv_actuators actuators.launch.py max_pwm:=180
 sudo apt install ros-jazzy-web-video-server ros-jazzy-joy
 pip install -r usv_ws/src/usv_gcs/requirements.txt
 cd usv_ws
-colcon build --symlink-install
+colcon build --symlink-install --packages-select usv_gcs
 source install/setup.bash
 ros2 launch usv_gcs gcs.launch.py
 ```
 
+- `--packages-select usv_gcs`: GCS(Raspberry Pi)는 `usv_gcs`만 실행하므로 워크스페이스에 있는 `usv_sensors` / `usv_actuators`는 빌드하지 않습니다 (그 두 패키지는 Arduino UNO Q 전용 의존성을 전제로 하며 GCS에는 설치돼 있지 않을 수 있습니다).
 - 브라우저에서 `http://<GCS IP>:8000` 접속 시 대시보드가 뜹니다.
 
 파라미터 오버라이드 예시 (조이스틱 축 확정 후):
@@ -263,10 +271,10 @@ ros2 launch usv_gcs gcs.launch.py linear_axis:=1 angular_axis:=0
 
 **이미 되어있는 것**
 
-- `joy_to_cmd_node` — `/joy` → `/cmd_vel` 변환 로직 완성 (축 번호만 확인 필요)
+- `joy_to_cmd_node` — `/joy` → `/cmd_vel` 변환 로직 완성 (축 번호만 확인 필요), 펌프 버튼(`pump_button`, 기본 0번) → `/actuator/pump_cmd` 발행도 포함
 - `gui_main_node` — 모든 구독/발행 배선 완성
   - Flask 웹 대시보드(`dashboard_html.py`)가 수질/GPS/배터리/cmd_vel을 1초 주기로 갱신
-  - 펌프 on/off · LED 색상 컨트롤 포함
+  - 펌프는 조이스틱 버튼으로만 조작 — GUI는 `/actuator/pump_cmd`를 구독해 상태만 표시 (버튼 없음), LED 색상 컨트롤(`/api/led` → `/actuator/led_cmd`)은 GUI 쪽에 남아있음
   - 듀얼 카메라 스트림은 `web_video_server` 주소를 그대로 `<img>`로 표시
 
 **참고할 만한 것** (자유롭게 바꿔도 됨)
@@ -278,7 +286,7 @@ ros2 launch usv_gcs gcs.launch.py linear_axis:=1 angular_axis:=0
 
 **동작 확인용 참고**
 
-- `usv_sensors` / `usv_actuators`를 동시에 띄운 상태에서 대시보드(`http://<GCS IP>:8000`)에 실시간 값이 뜨는지, 펌프/LED 버튼이 동작하는지 확인
+- `usv_sensors` / `usv_actuators`를 동시에 띄운 상태에서 대시보드(`http://<GCS IP>:8000`)에 실시간 값이 뜨는지, 조이스틱 펌프 버튼 조작 시 대시보드 펌프 상태 표시와 LED 컨트롤 버튼이 동작하는지 확인
 
 ---
 

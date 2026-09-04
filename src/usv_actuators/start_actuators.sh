@@ -39,6 +39,8 @@ docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
 
 echo "[4] Starting ROS 2 container (usv_actuators)..."
 # README.md 0항의 Docker 필수 조건(--privileged / -v /dev:/dev 등 디바이스 마운트 적용)을 그대로 반영.
+# --packages-select usv_actuators: 이 보드(B2)에는 usv_actuators만 올라가므로 워크스페이스에
+# 다른 패키지가 섞여 있어도 그것까지 같이 빌드하지 않는다.
 docker run -d \
     --name "$CONTAINER_NAME" \
     --network host \
@@ -52,7 +54,7 @@ docker run -d \
     bash -c '
         source /opt/ros/jazzy/setup.bash
         cd /ros2_ws
-        colcon build --symlink-install
+        colcon build --symlink-install --packages-select usv_actuators
         source /ros2_ws/install/setup.bash
         ros2 launch usv_actuators actuators.launch.py
     '
