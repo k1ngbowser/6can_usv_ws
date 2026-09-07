@@ -15,8 +15,8 @@ from .telemetry import bounded_integer
 
 NEUTRAL_PWM = 1487
 DEADBAND = 35
-MAX_DELTA = 400
-STEP_US = 20
+MAX_DELTA = 10
+STEP_US = 150
 REVERSE_PAUSE = 0.3
 
 
@@ -39,7 +39,7 @@ class ThrusterDriverNode(Node):
         self.target_left = NEUTRAL_PWM
         self.target_right = NEUTRAL_PWM
 
-        # 20Hz (0.05초) 타이머로 Ramp 및 Bridge.notify 실행
+        # 20Hz (0.05초) 타이머로 Ramp 및 self.get_logger().info(f'SEND L={self.cur_left} R={self.cur_right}')
         self.timer = self.create_timer(0.05, self.control_loop)
 
         self.get_logger().info('Thruster Driver Node Started (Direct Bridge RPC Mode)')
@@ -57,6 +57,7 @@ class ThrusterDriverNode(Node):
 
         self.target_left = self.calc_pwm(left_norm)
         self.target_right = self.calc_pwm(right_norm)
+        self.get_logger().info(f'linear={linear} angular={angular} tL={self.target_left} tR={self.target_right}')
 
     def calc_pwm(self, val: float) -> int:
         if abs(val) < 0.01:
@@ -102,7 +103,7 @@ class ThrusterDriverNode(Node):
             self.cur_right = self.ramp(self.cur_right, self.target_right)
 
         try:
-            # MCU로 직접 Bridge RPC 호출
+            self.get_logger().info(f'SEND L={self.cur_left} R={self.cur_right}')
             Bridge.notify('set_thruster_pwm', self.cur_left, self.cur_right)
         except Exception as error:
             self.get_logger().warning(f'Thruster Bridge RPC error: {error}')
@@ -118,6 +119,7 @@ def main(args=None):
         pass
     finally:
         try:
+            self.get_logger().info(f'SEND L={self.cur_left} R={self.cur_right}')
             Bridge.notify('set_thruster_pwm', NEUTRAL_PWM, NEUTRAL_PWM)
         except Exception:
             pass
