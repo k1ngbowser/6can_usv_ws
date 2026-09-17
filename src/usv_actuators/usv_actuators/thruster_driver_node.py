@@ -15,7 +15,7 @@ from .telemetry import bounded_integer
 
 NEUTRAL_PWM = 1487
 DEADBAND = 35
-MAX_DELTA = 10
+MAX_DELTA = 50
 STEP_US = 150
 REVERSE_PAUSE = 0.3
 
@@ -39,12 +39,13 @@ class ThrusterDriverNode(Node):
         self.target_left = NEUTRAL_PWM
         self.target_right = NEUTRAL_PWM
 
-        # 20Hz (0.05초) 타이머로 Ramp 및 self.get_logger().info(f'SEND L={self.cur_left} R={self.cur_right}')
         self.timer = self.create_timer(0.05, self.control_loop)
 
+        self.last_cmd_time = time.time()
         self.get_logger().info('Thruster Driver Node Started (Direct Bridge RPC Mode)')
 
     def on_cmd_vel(self, msg: Twist):
+        self.last_cmd_time = time.time()
         linear = max(-1.0, min(1.0, msg.linear.x))
         angular = max(-1.0, min(1.0, msg.angular.z))
 
@@ -55,8 +56,8 @@ class ThrusterDriverNode(Node):
         left_norm = left_raw / scale
         right_norm = right_raw / scale
 
-        self.target_left = self.calc_pwm(left_norm)
-        self.target_right = self.calc_pwm(right_norm)
+        self.target_left = self.reverse_pwm(self.calc_pwm(left_norm))
+        self.target_right = self.reverse_pwm(self.calc_pwm(right_norm))
         self.get_logger().info(f'linear={linear} angular={angular} tL={self.target_left} tR={self.target_right}')
 
     def calc_pwm(self, val: float) -> int:
@@ -71,6 +72,11 @@ class ThrusterDriverNode(Node):
             return NEUTRAL_PWM - DEADBAND + delta
         else:
             return NEUTRAL_PWM
+
+    @staticmethod
+    def reverse_pwm(us: int) -> int:
+        """1487 중립 기준으로 PWM 값을 반사시켜 반대 회전 방향으로 변환."""
+        return NEUTRAL_PWM - (us - NEUTRAL_PWM)
 
     @staticmethod
     def sign(v: int) -> int:
@@ -88,6 +94,9 @@ class ThrusterDriverNode(Node):
 
     def control_loop(self):
         now = time.time()
+        if now - self.last_cmd_time > 0.5:
+            self.target_left = NEUTRAL_PWM
+            self.target_right = NEUTRAL_PWM
 
         if (self.sign(self.target_left) * self.sign(self.cur_left) < 0 or
                 self.sign(self.target_right) * self.sign(self.cur_right) < 0):
@@ -119,7 +128,7 @@ def main(args=None):
         pass
     finally:
         try:
-            self.get_logger().info(f'SEND L={self.cur_left} R={self.cur_right}')
+            node.get_logger().info('SEND L=NEUTRAL R=NEUTRAL (shutdown)')
             Bridge.notify('set_thruster_pwm', NEUTRAL_PWM, NEUTRAL_PWM)
         except Exception:
             pass
